@@ -1,0 +1,21 @@
+#!/usr/bin/env ruby
+
+$root = File.expand_path(File.join(File.dirname(__FILE__), '..'))
+$script = File.basename(__FILE__)
+
+require "optparse"
+require File.join($root, "lib/tool")
+
+first_arg = (ARGV.size > 0 ? ARGV[0] : nil )
+
+begin
+  output = case first_arg
+             when "aws" then AWS.new.aws(ARGV[1..-1])
+             else
+               puts "Usage:"
+               puts "\t#{$script} aws ..."
+           end
+  puts output if output
+rescue => e
+  puts e
+end
