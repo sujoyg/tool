@@ -16,13 +16,13 @@ class AWS
       File.dirname File.dirname `readlink \`which java\``.strip
     end
 
-    aws_dir = File.join ENV["HOME"], ".aws"
-    raise "Directory #{aws_dir} does not exist." unless Dir.exists? aws_dir
-    raise "EC2 key not found." unless Dir[File.join aws_dir, "pk-*"].size > 0
-    raise "EC2 cert not found." unless Dir[File.join aws_dir, "cert-*"].size > 0
+    tool_dir = ENV["TOOL_AWS_CONFIG"] || File.join(ENV["HOME"], ".tool")
+    raise "Please create a directory #{tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory." unless Dir.exists? tool_dir
+    raise "AWS key file not found in directory #{tool_dir} or its prefix is not pk." unless Dir[File.join tool_dir, "pk-*"].size > 0
+    raise "AWS cert file not found in directory #{tool_dir} or its prefix is not cert." unless Dir[File.join tool_dir, "cert-*"].size > 0
 
-    ENV["EC2_PRIVATE_KEY"] = Dir[File.join aws_dir, "pk-*"][0]
-    ENV["EC2_CERT"] = Dir[File.join aws_dir, "cert-*"][0]
+    ENV["EC2_PRIVATE_KEY"] = Dir[File.join tool_dir, "pk-*"][0]
+    ENV["EC2_CERT"] = Dir[File.join tool_dir, "cert-*"][0]
   end
 
   def aws(args)
