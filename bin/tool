@@ -1,21 +1,34 @@
 #!/usr/bin/env ruby
 
-$root = File.expand_path(File.join(File.dirname(__FILE__), '..'))
 $script = File.basename(__FILE__)
 
 require "optparse"
-require File.join($root, "lib/tool")
+require File.expand_path("../../lib/tool", __FILE__)
+require File.expand_path("../../lib/constants", __FILE__)
 
-first_arg = (ARGV.size > 0 ? ARGV[0] : nil )
 
-begin
-  output = case first_arg
-             when "aws" then AWS.new.aws(ARGV[1..-1])
-             else
-               puts "Usage:"
-               puts "\t#{$script} aws ..."
-           end
-  puts output if output
-rescue => e
-  puts e
+def main
+  config_file = File.join ENV["HOME"], ".tool", "config.yml"
+  constants = File.exists?(config_file) ? Tool::Constant.read(config_file) : Tool::Constant.new
+  begin
+    first_arg = (ARGV.size > 0 ? ARGV[0] : nil)
+
+    output = case first_arg
+      when "aws" then
+        AWS.new(constants).aws(ARGV[1..-1])
+      else
+        puts "Usage:"
+        puts "\t#{$script} aws ..."
+    end
+    puts output if output
+  rescue UserError => e
+    puts e
+  rescue => e
+    raise
+  end
+end
+
+
+if __FILE__ == $0
+  main
 end
