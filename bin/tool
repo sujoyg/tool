@@ -8,8 +8,10 @@ require File.expand_path("../../lib/constants", __FILE__)
 
 
 def main
-  config_file = File.join ENV["HOME"], ".tool", "config.yml"
-  constants = File.exists?(config_file) ? Tool::Constant.read(config_file) : Tool::Constant.new
+  tool_dir = ENV["TOOL_AWS_CONFIG"] || File.join(ENV["HOME"], ".tool")
+  constants_file = File.join tool_dir, "constants.yml"
+  constants = File.exists?(constants_file) ? Tool::Constant.read(constants_file) : Tool::Constant.new
+
   begin
     first_arg = (ARGV.size > 0 ? ARGV[0] : nil)
 

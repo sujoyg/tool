@@ -1,11 +1,11 @@
 # Using REXML since it was hard to make libxml work with namespaces in AWS XML responses.
 require "rexml/document"
 
-
 class AWSError < Exception
 end
 
-class UserError < Exception; end
+class UserError < Exception
+end
 
 class AWS
   def initialize(constants)
@@ -21,13 +21,13 @@ class AWS
       File.dirname File.dirname `readlink \`which java\``.strip
     end
 
-    tool_dir = ENV["TOOL_AWS_CONFIG"] || File.join(ENV["HOME"], ".tool")
-    raise UserError.new("Please create a directory #{tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? tool_dir
-    raise UserError.new("AWS key file not found in directory #{tool_dir} or its prefix is not pk.") unless Dir[File.join tool_dir, "pk-*"].size > 0
-    raise UserError.new("AWS cert file not found in directory #{tool_dir} or its prefix is not cert.") unless Dir[File.join tool_dir, "cert-*"].size > 0
+    @tool_dir = ENV["TOOL_AWS_CONFIG"] || File.join(ENV["HOME"], ".tool")
+    raise UserError.new("Please create a directory #{@tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? @tool_dir
+    raise UserError.new("AWS key file not found in directory #{@tool_dir} or its prefix is not pk.") unless Dir[File.join @tool_dir, "pk-*"].size > 0
+    raise UserError.new("AWS cert file not found in directory #{@tool_dir} or its prefix is not cert.") unless Dir[File.join @tool_dir, "cert-*"].size > 0
 
-    ENV["EC2_PRIVATE_KEY"] = Dir[File.join tool_dir, "pk-*"][0]
-    ENV["EC2_CERT"] = Dir[File.join tool_dir, "cert-*"][0]
+    ENV["EC2_PRIVATE_KEY"] = Dir[File.join @tool_dir, "pk-*"][0]
+    ENV["EC2_CERT"] = Dir[File.join @tool_dir, "cert-*"][0]
   end
 
   def aws(args)
@@ -52,6 +52,8 @@ class AWS
       aws_database_create(args[1..-1])
     elsif args[0] == "delete"
       aws_database_delete(args[1..-1])
+    elsif args[0] == "list"
+      aws_database_list(args[1..-1])
     elsif args[0] == "pull"
       aws_database_pull(args[1..-1])
     elsif args[0] == "push"
@@ -72,7 +74,11 @@ class AWS
   def aws_database_connect(args)
     options = {}
     command_line_parser = OptionParser.new do |config|
-      config.banner = "Usage: aws database connect <INSTANCE> <DATABASE>"
+      config.banner = "Usage: aws database connect <INSTANCE>"
+
+      config.on("-d", "--database DATABASE", "Database name.") do |user|
+        options[:user] = user
+      end
 
       config.on("-u", "--user USER", "Database user.") do |user|
         options[:user] = user
@@ -84,7 +90,7 @@ class AWS
     end
 
     command_line_parser.parse!(args)
-    if args.size != 2
+    if args.size < 1
       puts command_line_parser
       exit
     end
@@ -92,8 +98,9 @@ class AWS
     instance, database = args
     user = options[:user] || @constants.database && @constants.database.user
     password = options[:password] || @constants.database && @constants.database.user
+    database = database || options[:database]
 
-    raise UserError.new("Please specify a user on the command line or in ~/.tools/constants.yml") if user.nil?
+    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
 
     begin
@@ -103,7 +110,11 @@ class AWS
       return
     end
 
-    exec "mysql --prompt '\\h(\\u)>' -u#{user} -p#{password} -h#{address} #{database}"
+    if database.nil?
+      exec "mysql --prompt '\\h(\\u)>' -u#{user} -p#{password} -h#{address}"
+    else
+      exec "mysql --prompt '\\h(\\u)>' -u#{user} -p#{password} -h#{address} #{database}"
+    end
   end
 
   def aws_database_create(args)
@@ -207,7 +218,6 @@ class AWS
     end
   end
 
-
   def aws_database_delete(args)
     command_line_parser = OptionParser.new do |config|
       config.banner = "Usage: aws database delete <INSTANCE>"
@@ -244,6 +254,31 @@ class AWS
     end
   end
 
+  def aws_database_list(args)
+    command_line_parser = OptionParser.new do |config|
+      config.banner = "Usage: aws database list"
+
+      config.on("-h", "--help", "Display this help message") do
+        puts config
+        exit
+      end
+    end
+
+    command_line_parser.parse!(args)
+
+    command = "#{@rds}/rds-describe-db-instances --show-xml"
+
+    output = `#{command}`
+    if $?.to_i != 0
+      raise AWSError.new(output)
+    end
+
+    doc = REXML::Document.new output
+    doc.elements.each("DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance") do |instance|
+      puts "Instance: #{instance.elements["DBInstanceIdentifier"].text}"
+      puts "\tHost: #{instance.elements["Endpoint/Address"].text}"
+    end
+  end
 
   def aws_database_pull(args)
     options = {}
@@ -274,7 +309,7 @@ class AWS
 
     user = options[:user] || @constants.database && @constants.database.user
     password = options[:password] || @constants.database && @constants.database.password
-    raise UserError.new("Please specify a user on the command line or in ~/.tools/constants.yml") if user.nil?
+    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
 
     begin
@@ -317,7 +352,7 @@ class AWS
 
     user = options[:user] || @constants.database && @constants.database.user
     password = options[:password] || @constants.database && @constants.database.password
-    raise UserError.new("Please specify a user on the command line or in ~/.tools/constants.yml") if user.nil?
+    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
 
     begin
@@ -360,7 +395,7 @@ class AWS
     end
 
     doc = REXML::Document.new output
-    status = doc.elements['DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance'].elements['DBInstanceStatus'].text
+    status = doc.elements["DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance"].elements["DBInstanceStatus"].text
 
     return status
   end
@@ -374,7 +409,7 @@ class AWS
     end
 
     doc = REXML::Document.new output
-    address = doc.elements['DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance'].elements['Endpoint/Address'].text
+    address = doc.elements["DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance"].elements["Endpoint/Address"].text
 
     return address
   end
