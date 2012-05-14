@@ -21,7 +21,7 @@ class AWS
       File.dirname File.dirname `readlink \`which java\``.strip
     end
 
-    @tool_dir = ENV["TOOL_AWS_CONFIG"] || File.join(ENV["HOME"], ".tool")
+    @tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
     raise UserError.new("Please create a directory #{@tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? @tool_dir
     raise UserError.new("AWS key file not found in directory #{@tool_dir} or its prefix is not pk.") unless Dir[File.join @tool_dir, "pk-*"].size > 0
     raise UserError.new("AWS cert file not found in directory #{@tool_dir} or its prefix is not cert.") unless Dir[File.join @tool_dir, "cert-*"].size > 0
@@ -50,6 +50,8 @@ class AWS
       aws_database_connect(args[1..-1])
     elsif args[0] == "create"
       aws_database_create(args[1..-1])
+    elsif args[0] == "clone"
+      aws_database_clone(args[1..-1])
     elsif args[0] == "delete"
       aws_database_delete(args[1..-1])
     elsif args[0] == "list"
@@ -116,6 +118,7 @@ class AWS
       exec "mysql --prompt '\\h(\\u)>' -u#{user} -p#{password} -h#{address} #{database}"
     end
   end
+
 
   def aws_database_create(args)
     STDOUT.sync = true
@@ -216,6 +219,54 @@ class AWS
 
       return
     end
+  end
+
+
+  def aws_database_clone(args)
+    STDOUT.sync = true
+
+    options = {}
+    command_line_parser = OptionParser.new do |config|
+      config.banner = "Usage: aws database clone <SOURCE_INSTANCE> <SOURCE_DATABASE> <TARGET_INSTANCE> <TARGET_DATABASE> [options]"
+
+      config.on("-u", "--user USER", "Database user.") do |user|
+        options[:user] = user
+      end
+
+      config.on("-p", "--password PASSWORD", "Database password.") do |password|
+        options[:password] = password
+      end
+
+      config.on("-h", "--help", "Display this help message") do
+        puts config
+        exit
+      end
+    end
+
+    command_line_parser.parse!(args)
+    if args.size != 4
+      puts command_line_parser
+      exit
+    end
+
+    instance, source_database, target_database, table = args
+
+    user = options[:user] || @constants.database && @constants.database.user
+    password = options[:password] || @constants.database && @constants.database.user
+    database = database || options[:database]
+
+    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
+    # If password is not specified, mysql client will prompt for one.
+
+    command = <<-COMMAND
+      #{@rds}/rds-create-db-instance #{instance} \\
+	      -s #{storage} -c #{size} -e MySQL5.1 -u #{options[:user]} -p #{options[:password]} \\
+	      --db-name #{database} -g production -m #{multi_az}
+    COMMAND
+
+    output = `#{command}`
+    puts output
+    return if $?.to_i != 0
   end
 
   def aws_database_delete(args)

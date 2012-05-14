@@ -8,7 +8,7 @@ Copy the source to a local directory and add 'bin' to PATH.
 
 In order to use AWS related commands, you will need to create a directory ${HOME}/.tool and
 add your AWS private key and cert files to it. If such a directory by some other name already exists,
-you could also set an environment variable TOOL_AWS_CONFIG to point to it.
+you could also set an environment variable TOOL_DIR to point to it.
 
 Usage
 -----
