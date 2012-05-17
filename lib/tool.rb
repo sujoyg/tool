@@ -377,14 +377,22 @@ class AWS
   def aws_database_push(args)
     options = {}
     command_line_parser = OptionParser.new do |config|
-      config.banner = "Usage: aws database pull <INSTANCE> <REMOTE DATABASE> <LOCAL DATABASE> <TABLE> [options]"
+      config.banner = "Usage: aws database push <LOCAL DATABASE> <INSTANCE>:<REMOTE DATABASE> <TABLE> [options]"
 
-      config.on("-u", "--user USER", "Database user.") do |user|
-        options[:user] = user
+      config.on("-u", "--user USER", "Remote database user.") do |user|
+        options[:remote_user] = user
       end
 
-      config.on("-p", "--password PASSWORD", "Database password.") do |password|
-        options[:password] = password
+      config.on("-p", "--password PASSWORD", "Remote database password.") do |password|
+        options[:remote_password] = password
+      end
+
+      config.on("-U", "--local_user USER", "Local database user.") do |user|
+        options[:local_user] = user
+      end
+
+      config.on("-P", "--local_password PASSWORD", "Local database password.") do |password|
+        options[:local_password] = password
       end
 
       config.on("-h", "--help", "Display this help message") do
@@ -394,17 +402,26 @@ class AWS
     end
 
     command_line_parser.parse!(args)
-    if args.size != 4
+    if args.size != 3
       puts command_line_parser
       exit
     end
 
-    source_database, instance, target_database, table = args
+    source_database, target, table = args
+    instance, target_database = target.split(":", 2)
+    raise UserError.new("Please specify an RDS instance.") if instance.nil?
+    raise UserError.new("Please specify an target database.") if target_database.nil?
 
-    user = options[:user] || @constants.database && @constants.database.user
-    password = options[:password] || @constants.database && @constants.database.password
-    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
+    remote_user = options[:remote_user] || @constants.database && @constants.database.user
+    remote_password = options[:remote_password] || @constants.database && @constants.database.password
+    raise UserError.new("Please specify a remote user on the command line or in #{@tool_dir}/constants.yml") if remote_user.nil?
     # If password is not specified, mysql client will prompt for one.
+
+    local_user = options[:local_user] || @constants.database && @constants.database.local_user
+    local_password = options[:local_password] || @constants.database && @constants.database.local_password
+    # A local user or password is not required.
+
+    # TODO: A way to check that the provided user and password work for local and remote databases.
 
     begin
       address = get_database_instance_address(instance)
@@ -413,7 +430,10 @@ class AWS
       return
     end
 
-    exec "mysqldump #{source_database} #{table} | mysql -u#{user} -p#{password} -h#{address} #{target_database}"
+    local_params = []
+    local_params << "-u#{local_user}" if local_user
+    local_params << "-p#{local_password}" if local_password
+    exec "mysqldump #{local_params.join(" ")} #{source_database} #{table} | mysql -u#{remote_user} -p#{remote_password} -h#{address} #{target_database}"
   end
 
 
