@@ -327,8 +327,17 @@ class AWS
 
 
   def aws_database_list(args)
+    options = {}
     command_line_parser = OptionParser.new do |config|
       config.banner = "Usage: aws database list"
+
+      config.on("-u", "--user USER", "Database user.") do |user|
+        options[:user] = user
+      end
+
+      config.on("-p", "--password PASSWORD", "Database password.") do |password|
+        options[:password] = password
+      end
 
       config.on("-h", "--help", "Display this help message") do
         puts config
@@ -346,10 +355,21 @@ class AWS
     end
 
     doc = REXML::Document.new output
-    doc.elements.each("DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance") do |instance|
-      puts "Instance: #{instance.elements["DBInstanceIdentifier"].text}"
-      puts "\tHost: #{instance.elements["Endpoint/Address"].text}"
+    doc.elements.each("DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance") do |element|
+      instance = element.elements["DBInstanceIdentifier"].text
+      host = element.elements["Endpoint/Address"].text
+      admin = options[:user] || element.elements["MasterUsername"].text
+      password = options[:password]
+
+      databases = `mysql -h#{host} -u#{admin} -p#{password} -N -e "SHOW DATABASES"`.split
+
+      puts "Instance: #{instance}"
+      puts "Endpoint: #{host}"
+      puts "Databases:"
+      databases.each { |database| puts "\t#{database}" }
     end
+
+    return
   end
 
 
