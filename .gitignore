@@ -23,3 +23,5 @@
 
 # Ignore RubyMine config.
 /.idea
+
+/pkg

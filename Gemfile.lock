@@ -1,3 +1,9 @@
+PATH
+  remote: .
+  specs:
+    tool (0.0.1)
+      guid
+
 GEM
   remote: http://rubygems.org/
   specs:
@@ -16,5 +22,5 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  guid
   rspec
+  tool!

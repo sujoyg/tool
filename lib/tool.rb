@@ -262,10 +262,9 @@ class AWS
     target_instance, target_database = target.split(":", 2)
     raise UserError.new("Please specify a target RDS instance.") if target_instance.nil?
     raise UserError.new("Please specify a target database.") if target_database.nil?
-    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
-    raise UserError.new("Source and target cannot be the same") if source_instance == target_instance and source_database == target_database
+    raise UserError.new("Source and target cannot be the same.") if source_instance == target_instance and source_database == target_database
 
-    raise UserError.new("Please specify a user using --user or in constants.yml") if user.nil?
+    raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
 
     # TODO: A way to check that the provided user and password work for local and remote databases.
