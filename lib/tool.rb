@@ -1,4 +1,5 @@
 # Using REXML since it was hard to make libxml work with namespaces in AWS XML responses.
+require "guid"
 require "rexml/document"
 
 class AWSError < Exception
@@ -16,10 +17,10 @@ class AWS
 
     ENV["AWS_RDS_HOME"] = File.join root, "vendor/RDSCli-1.3.003"
     ENV["JAVA_HOME"] = if File.exists? "/usr/libexec/java_home"
-      `/usr/libexec/java_home`.strip
-    else
-      File.dirname File.dirname `readlink \`which java\``.strip
-    end
+                         `/usr/libexec/java_home`.strip
+                       else
+                         File.dirname File.dirname `readlink \`which java\``.strip
+                       end
 
     @tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
     raise UserError.new("Please create a directory #{@tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? @tool_dir
@@ -172,7 +173,7 @@ class AWS
     raise UserError.new("Please specify a database password using -p or --password.") if options[:password].nil?
 
     command = <<-COMMAND
-      #{@rds}/rds-create-db-instance #{instance} \\
+#{@rds}/rds-create-db-instance #{instance} \\
 	      -s #{storage} -c #{size} -e MySQL5.1 -u #{options[:user]} -p #{options[:password]} \\
 	      --db-name #{database} -g production -m #{multi_az}
     COMMAND
@@ -227,7 +228,7 @@ class AWS
 
     options = {}
     command_line_parser = OptionParser.new do |config|
-      config.banner = "Usage: aws database clone <SOURCE_INSTANCE> <SOURCE_DATABASE> <TARGET_INSTANCE> <TARGET_DATABASE> [options]"
+      config.banner = "Usage: aws database clone <SOURCE_INSTANCE>:<SOURCE_DATABASE> <TARGET_INSTANCE>:<TARGET_DATABASE> [options]"
 
       config.on("-u", "--user USER", "Database user.") do |user|
         options[:user] = user
@@ -244,30 +245,50 @@ class AWS
     end
 
     command_line_parser.parse!(args)
-    if args.size != 4
+    if args.size != 2
       puts command_line_parser
       exit
     end
 
-    instance, source_database, target_database, table = args
+    source, target = args
 
     user = options[:user] || @constants.database && @constants.database.user
     password = options[:password] || @constants.database && @constants.database.user
-    database = database || options[:database]
 
+    source_instance, source_database = source.split(":", 2)
+    raise UserError.new("Please specify a source RDS instance.") if source_instance.nil?
+    raise UserError.new("Please specify a source database.") if source_database.nil?
+
+    target_instance, target_database = target.split(":", 2)
+    raise UserError.new("Please specify a target RDS instance.") if target_instance.nil?
+    raise UserError.new("Please specify a target database.") if target_database.nil?
     raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
+    raise UserError.new("Source and target cannot be the same") if source_instance == target_instance and source_database == target_database
+
+    raise UserError.new("Please specify a user using --user or in constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
 
-    command = <<-COMMAND
-      #{@rds}/rds-create-db-instance #{instance} \\
-	      -s #{storage} -c #{size} -e MySQL5.1 -u #{options[:user]} -p #{options[:password]} \\
-	      --db-name #{database} -g production -m #{multi_az}
-    COMMAND
+    # TODO: A way to check that the provided user and password work for local and remote databases.
 
-    output = `#{command}`
-    puts output
-    return if $?.to_i != 0
+    begin
+      source_address = get_database_instance_address(source_instance)
+      target_address = get_database_instance_address(target_instance)
+    rescue AWSError => e
+      puts "Error: #{parse_aws_error(e.to_s)}"
+      return
+    end
+
+    tables = `mysql -u#{user} -p#{password} -h#{source_address} #{source_database} -N -e "SHOW TABLES"`.split
+    puts "#{tables.size} tables found."
+    tmpfile = File.join "/tmp", Guid.new.to_s
+    tables.each do |table|
+      puts "Cloning #{table}"
+      exec "mysqldump -u#{user} -p#{password} -h#{source_address} #{source_database} #{table} > #{tmpfile}"
+      exec "mysql -u#{user} -p#{password} -h#{target_address} #{target_database} < #{tmpfile}"
+    end
+    nil
   end
+
 
   def aws_database_delete(args)
     command_line_parser = OptionParser.new do |config|
@@ -305,6 +326,7 @@ class AWS
     end
   end
 
+
   def aws_database_list(args)
     command_line_parser = OptionParser.new do |config|
       config.banner = "Usage: aws database list"
@@ -330,6 +352,7 @@ class AWS
       puts "\tHost: #{instance.elements["Endpoint/Address"].text}"
     end
   end
+
 
   def aws_database_pull(args)
     options = {}
@@ -556,4 +579,3 @@ class AWS
     instances
   end
 end
-
