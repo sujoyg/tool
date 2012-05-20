@@ -143,11 +143,19 @@ class AWS
         options[:storage] = size
       end
 
-      config.on("-u", "--user USER", "Database user.") do |user|
+      config.on("--admin_user USER", "Admin user.") do |user|
+        options[:admin_user] = user
+      end
+
+      config.on("--admin_password PASSWORD", "Admin password.") do |password|
+        options[:admin_password] = password
+      end
+
+      config.on("--user USER", "This user will be granted all privileges to the database.") do |user|
         options[:user] = user
       end
 
-      config.on("-p", "--password PASSWORD", "Database password.") do |password|
+      config.on("--password PASSWORD", "Password for the user.") do |password|
         options[:password] = password
       end
 
@@ -169,56 +177,34 @@ class AWS
     size = "db.m1.#{options[:size]}"
     multi_az = options[:multi_az].to_s
 
-    raise UserError.new("Please specify a database user using -u or --user.") if options[:user].nil?
-    raise UserError.new("Please specify a database password using -p or --password.") if options[:password].nil?
+    admin_user = options[:admin_user]
+    admin_password = options[:admin_password]
+    raise UserError.new("Please specify an admin user with --admin_user.") if admin_user.nil?
+    raise UserError.new("Please specify an admin password with --admin_password.") if admin_password.nil?
 
-    command = <<-COMMAND
-#{@rds}/rds-create-db-instance #{instance} \\
-	      -s #{storage} -c #{size} -e MySQL5.1 -u #{options[:user]} -p #{options[:password]} \\
-	      --db-name #{database} -g production -m #{multi_az}
-    COMMAND
-
-    output = `#{command}`
-    puts output
-    return if $?.to_i != 0
-
-    count = 0
-    while true
-      count = (count + 1) % 4
-      spinner = ["\\", "|", "/", "-"][count]
-
-      begin
-        status = get_database_instance_status(instance)
-      rescue AWSError => e
-        puts "Error: #{parse_aws_error e.to_s}"
-        return
-      end
-
-      break if status == "available"
-
-      print "\r#{spinner} Waiting for database to become available. Current status is \"#{status}\"."
-      sleep 0.5
-    end
-
-    puts "\rDatabase is now available."
-
-    print "\nAttempting to connect to the database ... "
+    user = options[:user]
+    password = options[:password]
 
     begin
-      address = get_database_instance_address(instance)
-      output = `echo "select 1;" | mysql -h#{address} -u#{options[:user]} -p#{options[:password]} #{database} 2>&1`
-      if $?.to_i == 0
-        print "OK\n"
+      host = get_database_instance_address(instance)
+      databases = get_databases(host, admin_user, admin_password)
+      if databases.include? database
+        puts "Instance and database already exists."
       else
-        print "Failed\n"
-        print output
-        return
+        puts "Instance already exists."
+        puts "Creating database #{database}."
+        `mysql -h#{host} -u#{admin_user} -p#{admin_password} -e "CREATE DATABASE #{database}"`
+        `mysql -h#{host} -u#{admin_user} -p#{admin_password} -e "ALTER database #{database} CHARACTER SET utf8 COLLATE utf8_general_ci"`
+        unless user.nil?
+          if password.nil?
+            `mysql -h#{host} -u#{admin_user} -p#{admin_password} -e "GRANT ALL PRIVILEGES ON #{database}.* TO '#{user}'@'%'"`
+          else
+            `mysql -h#{host} -u#{admin_user} -p#{admin_password} -e "GRANT ALL PRIVILEGES ON #{database}.* TO '#{user}'@'%' IDENTIFIED BY '#{password}'"`
+          end
+        end
       end
     rescue AWSError => e
-      print "Failed\n"
-      puts parse_aws_error(e)
-
-      return
+      create_database_instance(instance, storage, size, admin_user, admin_password, database, multi_az)
     end
   end
 
@@ -282,8 +268,8 @@ class AWS
     tmpfile = File.join "/tmp", Guid.new.to_s
     tables.each do |table|
       puts "Cloning #{table}"
-      exec "mysqldump -u#{user} -p#{password} -h#{source_address} #{source_database} #{table} > #{tmpfile}"
-      exec "mysql -u#{user} -p#{password} -h#{target_address} #{target_database} < #{tmpfile}"
+      `mysqldump -u#{user} -p#{password} -h#{source_address} #{source_database} #{table} > #{tmpfile}`
+      `mysql -u#{user} -p#{password} -h#{target_address} #{target_database} < #{tmpfile}`
     end
     nil
   end
@@ -596,5 +582,59 @@ class AWS
     end
 
     instances
+  end
+
+
+  private
+
+  def create_database_instance(instance, storage, size, admin_user, admin_password, database, multi_az)
+    command = <<-COMMAND
+      #{@rds}/rds-create-db-instance #{instance} \\
+	      -s #{storage} -c #{size} -e MySQL5.1 -u #{admin_user} -p #{admin_password} \\
+	      --db-name #{database} -g production -m #{multi_az}
+    COMMAND
+
+    output = `#{command}`
+    puts output
+    return if $?.to_i != 0
+
+    count = 0
+    while true
+      count = (count + 1) % 4
+      spinner = ["\\", "|", "/", "-"][count]
+
+      begin
+        status = get_database_instance_status(instance)
+      rescue AWSError => e
+        puts "Error: #{parse_aws_error e.to_s}"
+        return
+      end
+
+      break if status == "available"
+
+      print "\r#{spinner} Waiting for database to become available. Current status is \"#{status}\"."
+      sleep 0.5
+    end
+
+    puts "\rDatabase is now available."
+
+    host = get_database_instance_address(instance)
+    check_database_connection(host, user, password)
+  end
+
+  def check_database_connection(host, user, password)
+    print "\nAttempting to connect to the instance ... "
+
+    output = `echo "select 1;" | mysql -h#{host} -u#{user} -p#{password} 2>&1`
+    if $?.to_i == 0
+      print "OK\n"
+    else
+      print "Failed\n"
+      print output
+    end
+  end
+
+  def get_databases(host, user, password)
+    `mysql -h#{host} -u#{user} -p#{password} -N -e "SHOW DATABASES"`.split.map(&:strip)
   end
 end
