@@ -18,9 +18,6 @@
 /solr/pids
 /log/sunspot-*
 
-# Ignore RVM config.
-/.rvmrc
-
 # Ignore RubyMine config.
 /.idea
 
