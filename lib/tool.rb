@@ -19,7 +19,8 @@ class AWS
     ENV["JAVA_HOME"] = if File.exists? "/usr/libexec/java_home"
                          `/usr/libexec/java_home`.strip
                        else
-                         File.dirname File.dirname `readlink \`which java\``.strip
+		         # There are two levels of indirection on Ubuntu boxes.
+                         File.dirname File.dirname `readlink -e \`which java\``.strip
                        end
 
     @tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
