@@ -16,12 +16,12 @@ class AWS
     @rds = File.join root, "vendor/RDSCli-1.3.003/bin"
 
     ENV["AWS_RDS_HOME"] = File.join root, "vendor/RDSCli-1.3.003"
-    ENV["JAVA_HOME"] = if File.exists? "/usr/libexec/java_home"
-                         `/usr/libexec/java_home`.strip
-                       else
-		         # There are two levels of indirection on Ubuntu boxes.
-                         File.dirname File.dirname `readlink -e \`which java\``.strip
-                       end
+    ENV["JAVA_HOME"] ||= if File.exists? "/usr/libexec/java_home"
+                           `/usr/libexec/java_home`.strip
+                       	 else
+		           # There are two levels of indirection on Ubuntu boxes.
+                           File.dirname File.dirname `readlink -e \`which java\``.strip
+                       	 end
 
     @tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
     raise UserError.new("Please create a directory #{@tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? @tool_dir
