@@ -82,8 +82,8 @@ class AWS
     command_line_parser = OptionParser.new do |config|
       config.banner = "Usage: aws database connect <INSTANCE>"
 
-      config.on("-d", "--database DATABASE", "Database name.") do |user|
-        options[:user] = user
+      config.on("-d", "--database DATABASE", "Database name.") do |database|
+        options[:database] = database
       end
 
       config.on("-u", "--user USER", "Database user.") do |user|
@@ -101,10 +101,10 @@ class AWS
       exit
     end
 
-    instance, database = args
+    instance = args[0]
     user = options[:user] || @constants.database && @constants.database.user
-    password = options[:password] || @constants.database && @constants.database.user
-    database = database || options[:database]
+    password = options[:password] || @constants.database && @constants.database.password
+    database = options[:database]
 
     raise UserError.new("Please specify a user on the command line or in #{@tool_dir}/constants.yml") if user.nil?
     # If password is not specified, mysql client will prompt for one.
