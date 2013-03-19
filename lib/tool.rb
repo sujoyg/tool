@@ -1,2 +1,1 @@
-require File.expand_path("../aws.rb", __FILE__)
-
+require File.expand_path('../aws.rb', __FILE__)

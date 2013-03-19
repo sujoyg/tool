@@ -1,6 +1,7 @@
 # Using REXML since it was hard to make libxml work with namespaces in AWS XML responses.
-require "guid"
-require "rexml/document"
+require 'guid'
+require 'rexml/document'
+require File.expand_path('../aws_database_parameter_group', __FILE__)
 
 class AWSError < Exception
 end
@@ -9,29 +10,13 @@ class UserError < Exception
 end
 
 class AWS
+  include AWSDatabaseParameterGroup
+
   def initialize(constants)
     @constants = constants
 
     root = File.expand_path("../..", __FILE__)
     @rds = File.join root, "vendor/RDSCli-1.3.003/bin"
-
-    ENV["AWS_RDS_HOME"] = File.join root, "vendor/RDSCli-1.3.003"
-    if ENV["JAVA_HOME"].nil? || ENV["JAVA_HOME"].size == 0
-       ENV["JAVA_HOME"] = if File.exists? "/usr/libexec/java_home"
-       			    `/usr/libexec/java_home`.strip
-                       	  else
-		            # There are two levels of indirection on Ubuntu boxes.
-                            File.dirname File.dirname `readlink -e \`which java\``.strip
-                       	  end
-    end
-
-    @tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
-    raise UserError.new("Please create a directory #{@tool_dir} with your AWS private key and cert files or set TOOL_AWS_CONFIG to an existing directory.") unless File.exists? @tool_dir
-    raise UserError.new("AWS key file not found in directory #{@tool_dir} or its prefix is not pk.") unless Dir[File.join @tool_dir, "pk-*"].size > 0
-    raise UserError.new("AWS cert file not found in directory #{@tool_dir} or its prefix is not cert.") unless Dir[File.join @tool_dir, "cert-*"].size > 0
-
-    ENV["EC2_PRIVATE_KEY"] = Dir[File.join @tool_dir, "pk-*"][0]
-    ENV["EC2_CERT"] = Dir[File.join @tool_dir, "cert-*"][0]
   end
 
   def aws(args)
@@ -50,47 +35,55 @@ class AWS
   end
 
   def aws_database(args)
-    if args[0] == "connect"
+    if args[0] == 'connect'
       aws_database_connect(args[1..-1])
-    elsif args[0] == "create"
+    elsif args[0] == 'create'
       aws_database_create(args[1..-1])
-    elsif args[0] == "clone"
+    elsif args[0] == 'clone'
       aws_database_clone(args[1..-1])
-    elsif args[0] == "delete"
+    elsif args[0] == 'delete'
       aws_database_delete(args[1..-1])
-    elsif args[0] == "list"
+    elsif args[0] == 'list'
       aws_database_list(args[1..-1])
-    elsif args[0] == "pull"
+    elsif args[0] == 'pull'
       aws_database_pull(args[1..-1])
-    elsif args[0] == "push"
+    elsif args[0] == 'push'
       aws_database_push(args[1..-1])
-    elsif args[0] == "status"
+    elsif args[0] == 'reboot'
+      aws_database_reboot(args[1..-1])
+    elsif args[0] == 'status'
       aws_database_status(args[1..-1])
+    elsif args[0..1] == ['parameter', 'group']
+      aws_database_parameter_group(args[2..-1])
     else
       puts "Usage:"
       puts "\t#{$script} aws database connect ..."
       puts "\t#{$script} aws database create ..."
       puts "\t#{$script} aws database delete ..."
+      puts "\t#{$script} aws database list ..."
+      puts "\t#{$script} aws database parameter group ..."
       puts "\t#{$script} aws database pull ..."
       puts "\t#{$script} aws database push ..."
+      puts "\t#{$script} aws database reboot ..."
       puts "\t#{$script} aws database status ..."
     end
   end
 
+
   def aws_database_connect(args)
     options = {}
     command_line_parser = OptionParser.new do |config|
-      config.banner = "Usage: aws database connect <INSTANCE>"
+      config.banner = 'Usage: aws database connect <INSTANCE>'
 
-      config.on("-d", "--database DATABASE", "Database name.") do |database|
+      config.on('-d', '--database DATABASE', 'Database name.') do |database|
         options[:database] = database
       end
 
-      config.on("-u", "--user USER", "Database user.") do |user|
+      config.on('-u', '--user USER', 'Database user.') do |user|
         options[:user] = user
       end
 
-      config.on("-p", "--password PASSWORD", "Database password.") do |password|
+      config.on('-p', '--password PASSWORD', 'Database password.') do |password|
         options[:password] = password
       end
     end
@@ -318,17 +311,17 @@ class AWS
   def aws_database_list(args)
     options = {}
     command_line_parser = OptionParser.new do |config|
-      config.banner = "Usage: aws database list"
+      config.banner = 'Usage: aws database list'
 
-      config.on("-u", "--user USER", "Database user.") do |user|
+      config.on('-u', '--user USER', 'Database user.') do |user|
         options[:user] = user
       end
 
-      config.on("-p", "--password PASSWORD", "Database password.") do |password|
+      config.on('-p', '--password PASSWORD', 'Database password.') do |password|
         options[:password] = password
       end
 
-      config.on("-h", "--help", "Display this help message") do
+      config.on('-h', '--help', 'Display this help message') do
         puts config
         exit
       end
@@ -503,6 +496,37 @@ class AWS
   end
 
 
+  def aws_database_reboot(args)
+    command_line_parser = OptionParser.new do |config|
+      config.banner = 'Usage: aws database reboot <INSTANCE> [options]'
+
+      config.on('-h', '--help', 'Display this help message') do
+        puts config
+        exit
+      end
+    end
+
+    command_line_parser.parse!(args)
+    unless args[0]
+      puts 'Please specify a database instance.'
+      puts
+      puts command_line_parser.help
+      exit(1)
+    end
+
+    command = <<-COMMAND
+      #{@rds}/rds-reboot-db-instance #{args[0]} \
+        --show-xml
+    COMMAND
+
+    output = `#{command}`
+    if $?.to_i != 0
+      raise AWSError.new(output)
+    end
+
+    puts output
+  end
+
   def get_database_instance_status(instance)
     command = "#{@rds}/rds-describe-db-instances #{instance} --show-xml"
 
@@ -517,6 +541,7 @@ class AWS
     return status
   end
 
+
   def get_database_instance_address(instance)
     command = "#{@rds}/rds-describe-db-instances #{instance} --show-xml"
 
@@ -530,6 +555,7 @@ class AWS
 
     return address
   end
+
 
   def parse_aws_error(error)
     error = error.to_s
@@ -608,7 +634,7 @@ class AWS
 
   def create_database_instance(instance, storage, size, admin_user, admin_password, database, multi_az)
     command = <<-COMMAND
-      #{@rds}/rds-create-db-instance #{instance} \\
+#{@rds}/rds-create-db-instance #{instance} \\
 	      -s #{storage} -c #{size} -e MySQL5.1 -u #{admin_user} -p #{admin_password} \\
 	      --db-name #{database} -g production -m #{multi_az}
     COMMAND

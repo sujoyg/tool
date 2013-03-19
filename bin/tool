@@ -2,33 +2,43 @@
 
 $script = File.basename(__FILE__)
 
-require "optparse"
-require File.expand_path("../../lib/tool", __FILE__)
-require File.expand_path("../../lib/constants", __FILE__)
+require File.expand_path('../../lib/tool', __FILE__)
+require File.expand_path('../../lib/constants', __FILE__)
 
 
-def main
-  tool_dir = ENV["TOOL_DIR"] || File.join(ENV["HOME"], ".tool")
-  constants_file = File.join tool_dir, "constants.yml"
+def main(account, commands)
+  root = File.expand_path('../..', __FILE__)
+  ENV['AWS_RDS_HOME'] = File.join root, 'vendor/RDSCli-1.3.003'
+  if ENV['JAVA_HOME'].nil? || ENV['JAVA_HOME'].size == 0
+    ENV['JAVA_HOME'] = if File.exists? '/usr/libexec/java_home'
+                         `/usr/libexec/java_home`.strip
+                       else
+                         # There are two levels of indirection on Ubuntu boxes.
+                         File.dirname File.dirname `readlink -e \`which java\``.strip
+                       end
+  end
+
+  tool_dir = File.join(ENV['HOME'], '.tool', account)
+  raise "Please create a directory #{tool_dir} with your AWS private key and cert files." unless Dir.exists? tool_dir
+  raise "An AWS key file prefixed pk- not found in directory #{tool_dir}." unless Dir[File.join tool_dir, 'pk-*'].size > 0
+  raise "An AWS cert file prefixed cert-* not found in directory #{tool_dir}." unless Dir[File.join tool_dir, 'cert-*'].size > 0
+
+  ENV['EC2_PRIVATE_KEY'] = Dir[File.join tool_dir, 'pk-*'][0]
+  ENV['EC2_CERT'] = Dir[File.join tool_dir, 'cert-*'][0]
+
+  constants_file = File.join tool_dir, 'constants.yml'
   constants = File.exists?(constants_file) ? Tool::Constant.read(constants_file) : Tool::Constant.new
 
-  begin
-    first_arg = (ARGV.size > 0 ? ARGV[0] : nil)
-
-    output = case first_arg
-      when "aws" then
-        AWS.new(constants).aws(ARGV[1..-1])
-      else
-        puts "Usage:"
-        puts "\t#{$script} aws ..."
-    end
-    puts output if output
-  rescue UserError => e
-    puts e
-  rescue => e
-    raise
-  end
+  AWS.new(constants).aws(commands)
 end
 
 
-main
+if __FILE__ == $0
+  account = ARGV[0]
+  if account.nil?
+    puts 'Please specify an account as the first argument.'
+    exit(1)
+  end
+
+  main(account, ARGV[1..-1])
+end
