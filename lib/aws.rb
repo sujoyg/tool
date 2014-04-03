@@ -1,5 +1,6 @@
 # Using REXML since it was hard to make libxml work with namespaces in AWS XML responses.
 require 'guid'
+require 'optparse'
 require 'rexml/document'
 require File.expand_path('../aws_database_parameter_group', __FILE__)
 
@@ -406,10 +407,12 @@ class AWS
     end
 
     params = []
-    params << "-u #{local_user}" unless local_user.nil?
-    params << "-p #{local_password}" unless local_password.nil?
+    params << "-u#{local_user}" unless local_user.nil?
+    params << "-p#{local_password}" unless local_password.nil?
 
-    exec "mysqldump -u#{user} -p#{password} -h#{address} #{source_database} #{table} | mysql #{params.join(' ')} #{target_database}"
+    command = "mysqldump -u#{user} -p#{password} -h#{address} #{source_database} #{table} | mysql #{params.join(' ')} #{target_database}"
+    puts command
+    exec command
   end
 
 

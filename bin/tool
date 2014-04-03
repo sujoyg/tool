@@ -29,7 +29,12 @@ def main(account, commands)
   constants_file = File.join tool_dir, 'constants.yml'
   constants = File.exists?(constants_file) ? Tool::Constant.read(constants_file) : Tool::Constant.new
 
-  AWS.new(constants).aws(commands)
+  if commands.first == "aws"
+    AWS.new(constants).aws(commands[1..-1])
+  else
+    puts "Usage:"
+    puts "\t#{$script} aws ..."
+  end
 end
 
 
