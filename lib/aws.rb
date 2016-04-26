@@ -13,25 +13,48 @@ end
 class AWS
   include AWSDatabaseParameterGroup
 
-  def initialize(constants)
-    @constants = constants
-
-    root = File.expand_path("../..", __FILE__)
-    @rds = File.join root, "vendor/RDSCli-1.3.003/bin"
+  def initialize
+    root = File.expand_path('../..', __FILE__)
+    @rds = File.join root, 'vendor/RDSCli-1.3.003/bin'
+    ENV['AWS_RDS_HOME'] = File.join root, 'vendor/RDSCli-1.3.003'
   end
 
-  def aws(args)
-    if args[0] == "database"
+  def aws args
+    options = {account: 'default'}
+    command_line_parser = OptionParser.new do |config|
+      config.banner = "Usage: #{$script} aws [OPTIONS] ..."
+
+      config.on('-a', '--account ACCOUNT', 'AWS account name ("default")') do |account|
+        options[:account] = account
+      end
+    end
+
+    command_line_parser.parse!(args)
+
+    account = options[:account]
+
+    tool_dir = File.join(ENV['HOME'], '.tool', account)
+    raise UserError.new("Please create a directory #{tool_dir} with your AWS private key and cert files or specify a different AWS account name.") unless Dir.exists? tool_dir
+    raise UserError.new("An AWS key file prefixed pk- not found in directory #{tool_dir}.") unless Dir[File.join tool_dir, 'pk-*'].size > 0
+    raise UserError.new("An AWS cert file prefixed cert-* not found in directory #{tool_dir}.") unless Dir[File.join tool_dir, 'cert-*'].size > 0
+
+    ENV['EC2_PRIVATE_KEY'] = Dir[File.join tool_dir, 'pk-*'][0]
+    ENV['EC2_CERT'] = Dir[File.join tool_dir, 'cert-*'][0]
+
+    constants_file = File.join tool_dir, 'constants.yml'
+    @constants = File.exists?(constants_file) ? Tool::Constant.read(constants_file) : Tool::Constant.new
+
+    if args[0] == 'database'
       aws_database(args[1..-1])
-    elsif args[0] == "instance"
+    elsif args[0] == 'instance'
       aws_instance(args[1..-1])
-    elsif args[0] == "role"
+    elsif args[0] == 'role'
       aws_role(args[1..-1])
     else
-      puts "Usage:"
-      puts "\t#{$script} aws database ..."
-      puts "\t#{$script} aws instance ..."
-      puts "\t#{$script} aws role ..."
+      puts 'Usage:'
+      puts "\t#{$script} aws [OPTIONS] database ..."
+      puts "\t#{$script} aws [OPTIONS] instance ..."
+      puts "\t#{$script} aws [OPTIONS] role ..."
     end
   end
 
@@ -58,18 +81,17 @@ class AWS
       aws_database_parameter_group(args[2..-1])
     else
       puts "Usage:"
-      puts "\t#{$script} aws database connect ..."
-      puts "\t#{$script} aws database create ..."
-      puts "\t#{$script} aws database delete ..."
-      puts "\t#{$script} aws database list ..."
-      puts "\t#{$script} aws database parameter group ..."
-      puts "\t#{$script} aws database pull ..."
-      puts "\t#{$script} aws database push ..."
-      puts "\t#{$script} aws database reboot ..."
-      puts "\t#{$script} aws database status ..."
+      puts "\t#{$script} aws [OPTIONS] database connect ..."
+      puts "\t#{$script} aws [OPTIONS] database create ..."
+      puts "\t#{$script} aws [OPTIONS] database delete ..."
+      puts "\t#{$script} aws [OPTIONS] database list ..."
+      puts "\t#{$script} aws [OPTIONS] database parameter group ..."
+      puts "\t#{$script} aws [OPTIONS] database pull ..."
+      puts "\t#{$script} aws [OPTIONS] database push ..."
+      puts "\t#{$script} aws [OPTIONS] database reboot ..."
+      puts "\t#{$script} aws [OPTIONS] database status ..."
     end
   end
-
 
   def aws_database_connect(args)
     options = {}
